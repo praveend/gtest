@@ -1,0 +1,61 @@
+---
+stages:
+- name: BuildApp
+  inputs:
+  - type: git
+    branch: master
+  triggers:
+  - type: commit
+  jobs:
+  - name: Build
+    type: builder
+    artifact_dir: output
+    build_type: shell
+    script: |-
+      #!/bin/bash
+
+      #Install meteor if its not installed
+      hash meteor 2>/dev/null || curl https://install.meteor.com | /bin/sh
+
+      #Add ~/.meteor to the path to workaround non-sudo installation issue
+      hash meteor 2>/dev/null || PATH=$PATH:$HOME/.meteor
+
+      # install demeteorizer npm module
+      npm install -g demeteorizer@2.3.1
+
+      # move into app and set packages_dir
+      cd app
+      export PACKAGE_DIRS=../packages/
+
+      # run demeteorizer
+      demeteorizer -o ../output
+
+      #create manifest file
+      echo applications: >> ../output/manifest.yml
+      echo - name: mymeteor >> ../output/manifest.yml
+      echo '  host: mymeteoraxv' >> ../output/manifest.yml
+      echo '  memory: 512M' >> ../output/manifest.yml
+      echo '  services:' >> ../output/manifest.yml
+      echo '  - Cloudant NoSQL DB-e2' >> ../output/manifest.yml
+      echo '  env:' >> ../output/manifest.yml
+      echo '    ROOT_URL: http://mymeteoraxv.mybluemix.net' >> ../output/manifest.yml
+      echo '    MONGO_URL: nope' >> ../output/manifest.yml
+      echo >> ../output/manifest.yml
+- name: deploy
+  inputs:
+  - type: job
+    stage: BuildApp
+    job: Build
+  triggers:
+  - type: stage
+  jobs:
+  - name: Deploy
+    type: deployer
+    target:
+      url: https://api.ng.bluemix.net
+      organization: mario.briggs@in.ibm.com
+      space: dev
+      application: meteorappbuilddeploy
+    script: |
+      #!/bin/bash
+      cf push "${CF_APP}"
